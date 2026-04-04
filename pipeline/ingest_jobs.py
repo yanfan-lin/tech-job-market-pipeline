@@ -40,7 +40,8 @@ def insert_job(cur, job):
             job_types_raw,
             raw_payload
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source_job_id) DO NOTHING;
         """,
         (
             "arbeitnow",
@@ -72,15 +73,17 @@ def main():
     # Create cursor
     cur = conn.cursor()
 
-    # Insert one first job
-    insert_job(cur, jobs[0])
+    # Insert ever job from API response
+    for job in jobs:
+        insert_job(cur, job)
+
 
     conn.commit()
 
     cur.close()
     conn.close()
 
-    print("Inserted 1 job into raw_jobs ")
+    print(f"Inserted {len(jobs)} jobs into raw_jobs.")
 
 
 

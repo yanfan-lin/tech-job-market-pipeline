@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS raw_jobs (
     id SERIAL PRIMARY KEY,
     source TEXT NOT NULL,
-    source_job_id TEXT NOT NULL,
+    source_job_id TEXT NOT NULL UNIQUE,
     company_name TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
