@@ -1,5 +1,5 @@
 # Fetch raw job data from the job source API,
-# and lo it into the raw_jobs table
+# and load it into the raw_jobs table
 
 import requests
 import json

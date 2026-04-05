@@ -1,5 +1,5 @@
 # Extract skills from cleaned job text,
-# and sotre job-skill relationships in the database
+# and store job-skill relationships in the database
 
 # Import database connection helper
 from app.database import get_db_connection
