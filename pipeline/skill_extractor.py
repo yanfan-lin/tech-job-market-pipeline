@@ -1,3 +1,6 @@
+# Extract skills from cleaned job text,
+# and sotre job-skill relationships in the database
+
 # Import database connection helper
 from app.database import get_db_connection
 
@@ -21,7 +24,7 @@ SKILLS = [
 def extract_skills_from_text(text):
     matched_skills = []
 
-    # Convert text to lower case for case-insensitive matching
+    # Convert text to lower case for case-insensitive skill matching
     lower_text = text.lower()
 
     for skill in SKILLS:
@@ -32,7 +35,7 @@ def extract_skills_from_text(text):
 
 
 def insert_skill(cur, skill_name):
-    # Insert skill if not already existed
+    # Insert skill if not already exists
     cur.execute(
         """
         INSERT INTO skills_extracted (skill_name)
@@ -42,7 +45,7 @@ def insert_skill(cur, skill_name):
         (skill_name,)
     )
 
-    # Get skill id
+    # Get skill ID from the skills_extracted table
     cur.execute(
         """
         SELECT id
@@ -56,6 +59,7 @@ def insert_skill(cur, skill_name):
 
 
 def insert_job_skill_map(cur, job_id, skill_id):
+    # Insert job-skill relationship if not already exists
     cur.execute(
         """
         INSERT INTO job_skill_map (job_id, skill_id)
@@ -70,6 +74,7 @@ def main():
     conn = get_db_connection()
     cur = conn.cursor()
 
+    # Read cleaned jobs for skill extraction
     cur.execute(
         """
         SELECT
@@ -90,7 +95,7 @@ def main():
 
         matched_skills = extract_skills_from_text(full_text)
 
-        # Insert matched skills and link them to current job
+        # Save matched skills and job-skill relationships
         for skill in matched_skills:
             skill_id = insert_skill(cur, skill)
             insert_job_skill_map(cur, job_id, skill_id)

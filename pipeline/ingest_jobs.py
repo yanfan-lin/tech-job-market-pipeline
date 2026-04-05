@@ -1,3 +1,6 @@
+# Fetch raw job data from the job source API,
+# and lo it into the raw_jobs table
+
 import requests
 import json
 
@@ -9,13 +12,13 @@ from app.database import get_db_connection
 
 
 def get_jobs():
-    # Send request to the source API
+    # Send a GET request to the job source API
     response = requests.get(settings.JOB_SOURCE_URL)
 
-    # Raise error if failed
+    # Raise error if request failed
     response.raise_for_status()
 
-    # Convert JSON response into Python dict
+    # Convert JSON response into Python dictionary
     data = response.json()
 
     return data
@@ -67,13 +70,10 @@ def main():
     # Get the list of job records from API response
     jobs = raw_data["data"]
 
-    # Open database connection
     conn = get_db_connection()
-
-    # Create cursor
     cur = conn.cursor()
 
-    # Insert ever job from API response
+    # Insert each job into the raw_jobs table
     for job in jobs:
         insert_job(cur, job)
 

@@ -1,4 +1,7 @@
--- Cleaned jobs table for processed job records
+-- Create processed tables for cleaned jobs, extracted skills, 
+-- and job-skill mapping.
+
+-- Store cleaned job records transformed from raw_jobs
 CREATE TABLE IF NOT EXISTS jobs_cleaned (
     id SERIAL PRIMARY KEY,
     raw_job_id INTEGER NOT NULL REFERENCES raw_jobs(id),
@@ -15,14 +18,14 @@ CREATE TABLE IF NOT EXISTS jobs_cleaned (
 );
 
 
--- Table to store extracted skills
+-- Store unique extracted skill names
 CREATE TABLE IF NOT EXISTS skills_extracted (
     id SERIAL PRIMARY KEY,
     skill_name TEXT NOT NULL UNIQUE
 );
 
 
--- Table mapping cleaned jobs to extracted skills
+-- Map cleaned jobs to extracted skills
 CREATE TABLE IF NOT EXISTS job_skill_map (
     id SERIAL PRIMARY KEY,
     job_id INTEGER NOT NULL REFERENCES jobs_cleaned(id),

@@ -1,3 +1,5 @@
+# Provide read-only analytics endpoints for the processed job market data
+
 # FastAPI router for analytics endpoints
 from fastapi import APIRouter
 from app.database import get_db_connection
@@ -5,7 +7,7 @@ from app.database import get_db_connection
 
 router = APIRouter()
 
-# Return TOP 10 most common skills extracted from job description
+# Return the TOP 10 most common extracted skills
 @router.get("/top-skills")
 def get_top_skills():
 
@@ -43,7 +45,7 @@ def get_top_skills():
     return result
 
 
-# Return Top 10 most common job titles
+# Return the Top 10 most common job titles
 @router.get("/top-titles")
 def get_top_titles():
 
@@ -79,14 +81,14 @@ def get_top_titles():
     return result
 
 
-# Return counts of remote jobs vs on-site jobs
+# Return counts of remote jobs and non-remote jobs
 @router.get("/remote-vs-onsite")
 def get_remote_vs_onsite():
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Count remote jobs and on-site jobs
+    # Count remote jobs and non-remote jobs
     cur.execute(
         """
         SELECT

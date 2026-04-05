@@ -1,11 +1,14 @@
+# Transform raw job records into cleaned job data in the jobs_cleaned table
+
 # Import database connection helper
 from app.database import get_db_connection
 
 
 def transform_jobs():
-    # Open database connection, create cursor
+    # Open database connection
     conn = get_db_connection()
 
+    # Create cursor to run SQL
     cur = conn.cursor()
 
     # Insert cleaned jobs from raw_jobs into jobs_cleaned

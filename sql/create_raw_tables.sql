@@ -1,4 +1,4 @@
--- Raw jobs table to store original job records from the source API
+-- Raw jobs table to store original job data from the job source API
 CREATE TABLE IF NOT EXISTS raw_jobs (
     id SERIAL PRIMARY KEY,
     source TEXT NOT NULL,
