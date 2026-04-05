@@ -3,4 +3,4 @@ uvicorn[standard]
 psycopg[binary]
 python-dotenv
 requests
-pytest
+
