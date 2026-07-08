@@ -1,4 +1,5 @@
 # Tech Job Market Data Pipeline
+[![My Skills](https://skillicons.dev/icons?i=py,postgres,fastapi,docker,git,github)](https://skillicons.dev)
 
 ## Overview
 A small ETL-style project that ingests public job listings, stores raw source data, cleans and normalizes job records, extracts skills from job text, and exposes simple analytics through a FastAPI app.
