@@ -1,17 +1,21 @@
-# Fetch raw job data from the job source API,
-# and load it into the raw_jobs table
+"""Fetch Arbeitnow job records and load accepted records into raw_jobs."""
+
+import json
+import logging
+from typing import Any
 
 import requests
-import json
 
-# Import project settings
 from app.config import settings
-
-# Database connection helper
 from app.database import get_db_connection
 
+logger = logging.getLogger(__name__)
 
-def get_jobs():
+# These fields identify a job and are required by the raw_jobs table
+REQUIRED_FIELDS = ("slug", "company_name", "title")
+
+
+def get_jobs() -> Any:
     # Send a GET request to the job source API
     response = requests.get(settings.JOB_SOURCE_URL)
 
@@ -24,9 +28,63 @@ def get_jobs():
     return data
 
 
-def insert_job(cur, job):
+def extract_job_records(raw_data: Any) -> list[Any]:
+    """Return the job list from a valid API response."""
 
-    # Insert one raw job record into raw_jobs table
+    if not isinstance(raw_data, dict):
+        raise ValueError("API response must be a JSON object.")
+
+    if "data" not in raw_data:
+        raise ValueError("API response must contain a 'data' field.")
+
+    jobs = raw_data["data"]
+
+    if not isinstance(jobs, list):
+        raise ValueError("API response 'data' field must be a list.")
+
+    return jobs
+
+
+def serialize_optional_json(value: Any) -> str | None:
+    """Serialize JSON data while preserving missing values as SQL NULL."""
+
+    if value is None:
+        return None
+
+    return json.dumps(value)
+
+
+def prepare_job(job: Any) -> dict[str, Any] | None:
+    """Return database-ready job data, or None when required data is invalid."""
+
+    if not isinstance(job, dict):
+        return None
+
+    for field in REQUIRED_FIELDS:
+        value = job.get(field)
+
+        if not isinstance(value, str) or not value.strip():
+            return None
+
+    return {
+        "source": "arbeitnow",
+        "source_job_id": job["slug"].strip(),
+        "company_name": job["company_name"].strip(),
+        "title": job["title"].strip(),
+        "description": job.get("description"),
+        "location": job.get("location"),
+        "remote": job.get("remote"),
+        "job_url": job.get("url"),
+        "posted_at_raw": job.get("created_at"),
+        "tags_raw": serialize_optional_json(job.get("tags")),
+        "job_types_raw": serialize_optional_json(job.get("job_types")),
+        "raw_payload": json.dumps(job),
+    }
+
+
+def insert_job(cur, prepared_job: dict[str, Any]) -> bool:
+    """Insert one prepared job and return whether a new row was created."""
+
     cur.execute(
         """
         INSERT INTO raw_jobs (
@@ -44,48 +102,108 @@ def insert_job(cur, job):
             raw_payload
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (source_job_id) DO NOTHING;
+        ON CONFLICT (source_job_id) DO NOTHING
+        RETURNING id;
         """,
         (
-            "arbeitnow",
-            job["slug"],
-            job["company_name"],
-            job["title"],
-            job["description"],
-            job["location"],
-            job["remote"],
-            job["url"],
-            job["created_at"],
-            json.dumps(job["tags"]),
-            json.dumps(job["job_types"]),
-            json.dumps(job),
-        )
+            prepared_job["source"],
+            prepared_job["source_job_id"],
+            prepared_job["company_name"],
+            prepared_job["title"],
+            prepared_job["description"],
+            prepared_job["location"],
+            prepared_job["remote"],
+            prepared_job["job_url"],
+            prepared_job["posted_at_raw"],
+            prepared_job["tags_raw"],
+            prepared_job["job_types_raw"],
+            prepared_job["raw_payload"],
+        ),
     )
 
+    # RETURNING produces a row only when PostgreSQL inserts the record
+    return cur.fetchone() is not None
 
-def main():
-    # Fetch raw data from API
-    raw_data = get_jobs()
 
-    # Get the list of job records from API response
-    jobs = raw_data["data"]
+def process_jobs(cur, jobs: list[Any]) -> dict[str, int]:
+    """Validate source jobs, insert accepted records, and count outcomes."""
+
+    counts = {
+        "fetched": len(jobs),
+        "inserted": 0,
+        "duplicates_skipped": 0,
+        "invalid_skipped": 0,
+    }
+
+    for job in jobs:
+        prepared_job = prepare_job(job)
+
+        if prepared_job is None:
+            counts["invalid_skipped"] += 1
+            continue
+
+        if insert_job(cur, prepared_job):
+            counts["inserted"] += 1
+        else:
+            counts["duplicates_skipped"] += 1
+
+    return counts
+
+
+def save_jobs(jobs: list[Any]) -> dict[str, int]:
+    """Save valid jobs in one transaction and return the outcome counts."""
 
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = None
 
-    # Insert each job into the raw_jobs table
-    for job in jobs:
-        insert_job(cur, job)
+    try:
+        cur = conn.cursor()
+        counts = process_jobs(cur, jobs)
+        conn.commit()
+
+        return counts
+
+    except Exception:
+        # Roll back the complete batch when an unexpected database error occurs
+        conn.rollback()
+
+        raise
+
+    finally:
+        if cur is not None:
+            cur.close()
+
+        conn.close()
 
 
-    conn.commit()
+def main() -> dict[str, int]:
+    """Run ingestion and return the final outcome counts."""
 
-    cur.close()
-    conn.close()
+    try:
+        raw_data = get_jobs()
+        jobs = extract_job_records(raw_data)
+        counts = save_jobs(jobs)
 
-    print(f"Inserted {len(jobs)} jobs into raw_jobs.")
+    except Exception:
+        logger.exception("Job ingestion failed.")
+        raise
 
+    logger.info(
+        "Ingestion complete: fetched=%d inserted=%d "
+        "duplicates_skipped=%d invalid_skipped=%d",
+        counts["fetched"],
+        counts["inserted"],
+        counts["duplicates_skipped"],
+        counts["invalid_skipped"],
+    )
+
+    return counts
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(message)s",
+    )
+
     main()
