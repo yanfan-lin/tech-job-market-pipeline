@@ -31,4 +31,4 @@ CREATE TABLE IF NOT EXISTS job_skill_map (
     job_id INTEGER NOT NULL REFERENCES jobs_cleaned(id),
     skill_id INTEGER NOT NULL REFERENCES skills_extracted(id),
     UNIQUE (job_id, skill_id)
-)
+);
