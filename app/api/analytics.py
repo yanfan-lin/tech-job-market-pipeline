@@ -1,22 +1,74 @@
-# Provide read-only analytics endpoints for the processed job market data
+"""Expose read-only analytics endpoints for processed job market data."""
 
-# FastAPI router for analytics endpoints
-from fastapi import APIRouter
+import logging
+
+import psycopg
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
 from app.database import get_db_connection
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Return the TOP 10 most common extracted skills
-@router.get("/top-skills")
+
+class SkillCount(BaseModel):
+    """Represent the number of jobs associated with one extracted skill."""
+
+    skill_name: str
+    job_count: int
+
+
+class TitleCount(BaseModel):
+    """Represent the number of jobs associated with one job title."""
+
+    title: str
+    job_count: int
+
+
+class RemoteFlagCount(BaseModel):
+    """Represent the number of jobs for one source-provided remote flag."""
+
+    remote: bool | None
+    job_count: int
+
+
+def _fetch_all(query: str):
+    """Execute a read-only query, map psycopg failures to HTTP 503, and close created resources."""
+
+    conn = None
+    cur = None
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+
+        return cur.fetchall()
+
+    except psycopg.Error as exc:
+        logger.exception("Analytics database query failed.")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics data is temporarily unavailable",
+        ) from exc
+
+    finally:
+        # Close resources that were successfully created
+        if cur is not None:
+            cur.close()
+
+        if conn is not None:
+            conn.close()
+
+
+@router.get("/top-skills", response_model=list[SkillCount])
 def get_top_skills():
+    """Return the ten extracted skills mapped to the most cleaned jobs."""
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    # Count how many jobs matched each skill
-    cur.execute(
-        """
+    rows = _fetch_all("""
         SELECT
             se.skill_name,
             COUNT(*) AS job_count
@@ -26,35 +78,26 @@ def get_top_skills():
         GROUP BY se.skill_name
         ORDER BY job_count DESC, se.skill_name ASC
         LIMIT 10;
-        """
-    )
-
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
+        """)
 
     result = []
 
     for row in rows:
-        result.append({
-            "skill_name": row[0],
-            "job_count": row[1]
-        })
+        result.append(
+            {
+                "skill_name": row[0],
+                "job_count": row[1],
+            }
+        )
 
     return result
 
 
-# Return the Top 10 most common job titles
-@router.get("/top-titles")
+@router.get("/top-titles", response_model=list[TitleCount])
 def get_top_titles():
+    """Return the ten most frequent exact title values in cleaned jobs."""
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    # Count the most common job titles
-    cur.execute(
-        """
+    rows = _fetch_all("""
         SELECT
             title,
             COUNT(*) AS job_count
@@ -62,58 +105,42 @@ def get_top_titles():
         GROUP BY title
         ORDER BY job_count DESC, title ASC
         LIMIT 10;
-        """
-    )
-
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
+        """)
 
     result = []
 
     for row in rows:
-        result.append({
-            "title": row[0],
-            "job_count": row[1]
-        })
-    
+        result.append(
+            {
+                "title": row[0],
+                "job_count": row[1],
+            }
+        )
+
     return result
 
 
-# Return counts of remote jobs and non-remote jobs
-@router.get("/remote-vs-onsite")
-def get_remote_vs_onsite():
+@router.get("/remote-status", response_model=list[RemoteFlagCount])
+def get_remote_status():
+    """Return job counts grouped by the source-provided remote flag."""
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    # Count remote jobs and non-remote jobs
-    cur.execute(
-        """
+    rows = _fetch_all("""
         SELECT
             remote,
             COUNT(*) AS job_count
         FROM jobs_cleaned
         GROUP BY remote
         ORDER BY remote DESC;
-        """
-    )
-
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
+        """)
 
     result = []
 
     for row in rows:
-        result.append({
-            "remote": row[0],
-            "job_count": row[1]
-        })
+        result.append(
+            {
+                "remote": row[0],
+                "job_count": row[1],
+            }
+        )
 
     return result
-
-
-

@@ -1,31 +1,11 @@
-# Create and test PostgreSQL database connection
+"""Create PostgreSQL database connection for the application"""
 
-# Import psycopg so Python can connect to PostgreSQL
 import psycopg
 
-# Import project settings from config
 from app.config import settings
 
 
 def get_db_connection():
-    # Open and return a new PostgreSQL connection
+    """Open a PostgreSQL connection; callers own transaction handling and cleanup."""
+
     return psycopg.connect(settings.DATABASE_URL)
-
-
-def test_db_connection():
-    # open a database connection
-    conn = get_db_connection()
-
-    # create a cursor to test SQL
-    cur = conn.cursor()
-
-    # Run a simple test query
-    cur.execute("SELECT 123;")
-
-    # Get the query result
-    result = cur.fetchone()
-
-    cur.close()
-    conn.close()
-
-    return result

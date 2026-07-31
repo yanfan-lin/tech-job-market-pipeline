@@ -1,248 +1,325 @@
 # Tech Job Market Data Pipeline
-[![My Skills](https://skillicons.dev/icons?i=py,postgres,fastapi,docker,git,github)](https://skillicons.dev)
 
-## Overview
-A small ETL-style project that ingests public job listings, stores raw source data, cleans and normalizes job records, extracts skills from job text, and exposes simple analytics through a FastAPI app.
+[![My Skills](https://skillicons.dev/icons?i=py,postgres,fastapi,docker,regex,git,github)](https://skillicons.dev)
 
-The pipeline uses [Arbeitnow API](https://www.arbeitnow.com/api/job-board-api) and PostgreSQL as the storage backend. It is intended to demonstrate a complete data flow from ingestion to analytics, without pretending to be a production-grade system.
+An end-to-end data pipeline that ingests job listings from the [Arbeitnow API](https://www.arbeitnow.com/api/job-board-api), stores raw and cleaned records in PostgreSQL, extracts known skills, and exposes aggregate results through FastAPI.
 
+The project demonstrates data validation, relational modelling, idempotent writes, transaction handling, rule-based enrichment, and automated testing.
 
-## Tech Stack 
-- Python
-- FastAPI
-- PostgreSQL
-- Docker Compose
-- SQL
-- psycopg
-- Git
-- requests
-- python-dotenv
-- uvicorn
+## Features
 
+- Ingests job listings from the Arbeitnow API into PostgreSQL
+- Validates required fields and preserves the original source payload
+- Prevents duplicate jobs, skills, and job-skill mappings
+- Cleans raw records and handles invalid optional timestamps safely
+- Extracts skills using case-insensitive whole-term matching
+- Exposes job-market aggregates through FastAPI
+- Uses transactions, rollback handling, and outcome logging
+- Includes mocked tests and real PostgreSQL integration tests
 
-## Project Structure
+## Architecture and data flow
 
-- docker-compose.yml — starts local PostgreSQL
-- requirements.txt — Python dependencies
-- .env.example — example environment variables
+```text
+Arbeitnow API
+      ↓
+   raw_jobs
+      ↓
+ jobs_cleaned
+      ↓
+skills_extracted + job_skill_map
+      ↓
+FastAPI analytics
+```
 
-app/
-- `main.py` — FastAPI application entry point
-- config.py — loads environment variables from .env
-- database.py — PostgreSQL connection helper
-- `api/analytics.py` — read-only analytics endpoints
+1. **Ingest:** Validate API records and preserve the source payload in `raw_jobs`.
+2. **Transform:** Clean valid records and load them into `jobs_cleaned`.
+3. **Enrich:** Extract known skills and create job-to-skill mappings.
+4. **Serve:** Query the processed tables through read-only FastAPI endpoints.
 
-pipeline/
-- `ingest_jobs.py` — fetches job data from the Arbeitnow API into `raw_jobs`
-- `transform_jobs.py` — transforms `raw_jobs` into `jobs_cleaned`
-- `skill_extractor.py` — extracts skills and creates job-skill mappings
+## Tech stack
 
-sql/
-- `create_raw_tables.sql` — creates `raw_jobs`
-- `create_processed_tables.sql` — creates cleaned and analytics-ready tables
+- **Language:** Python
+- **API:** FastAPI, Pydantic, Uvicorn
+- **Database:** PostgreSQL, Psycopg, SQL
+- **Data ingestion:** Requests, JSON, regular expressions
+- **Testing:** pytest, unittest.mock, FastAPI TestClient, HTTPX
+- **Development:** Docker Compose, Git, GitHub
 
+## Project structure
 
-## Setup Instructions
+```text
+.
+|-- app/
+|   |-- api/
+|   |   `-- analytics.py
+|   |-- config.py
+|   |-- database.py
+|   `-- main.py
+|-- pipeline/
+|   |-- ingest_jobs.py
+|   |-- transform_jobs.py
+|   `-- skill_extractor.py
+|-- sql/
+|   |-- create_raw_tables.sql
+|   `-- create_processed_tables.sql
+|-- tests/
+|   |-- test_analytics.py
+|   |-- test_analytics_postgres.py
+|   |-- test_config_database.py
+|   |-- test_ingest_jobs.py
+|   |-- test_skill_extractor.py
+|   |-- test_skill_extractor_postgres.py
+|   |-- test_transform_jobs.py
+|   `-- test_transform_jobs_postgres.py
+|-- .env.example
+|-- docker-compose.yml
+|-- requirements.txt
+`-- README.md
+```
+
+## Database tables
+
+### `raw_jobs`
+
+Landing table for source API records.
+
+- Stores the Arbeitnow slug as unique `source_job_id`.
+- Keeps mapped scalar fields, JSONB tags and job types, and the original record in `raw_payload`.
+- Retains the source timestamp as `posted_at_raw` text for later validation.
+- Uses PostgreSQL `CURRENT_TIMESTAMP` in the timezone-naive `ingested_at` column when the raw row is inserted.
+
+### `jobs_cleaned`
+
+Normalized table used by transformation and analytics.
+
+- References the originating `raw_jobs` row through `raw_job_id`.
+- Enforces a unique `source_job_id`.
+- Stores cleaned required and optional fields.
+- Stores valid source timestamps as UTC-normalized, timezone-naive values in `posted_at`; unavailable or invalid values are `NULL`.
+- Uses PostgreSQL `CURRENT_TIMESTAMP` in the timezone-naive `ingested_at` column when the cleaned row is inserted.
+
+### `skills_extracted`
+
+One row per unique skill name recognized by the rule-based extractor.
+
+### `job_skill_map`
+
+Many-to-many bridge between cleaned jobs and extracted skills. A unique `(job_id, skill_id)` constraint prevents duplicate relationships.
+
+## Local setup on Windows PowerShell
+
+### Prerequisites
+
+- Python 3.10 or newer with `venv` support
+- Docker Desktop with Docker Compose
+- Git, if cloning the repository
+
+Run all commands from the repository root.
 
 ### 1. Clone the repository
-```bash
+
+```powershell
 git clone https://github.com/yanfan-lin/tech-job-market-pipeline.git
-cd tech-job-market-pipeline
+Set-Location tech-job-market-pipeline
 ```
 
 ### 2. Create and activate a virtual environment
-```bash
+
+```powershell
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 ```
+
+If PowerShell blocks local activation scripts, use a PowerShell session with an execution policy appropriate for your development environment, then rerun the activation command.
 
 ### 3. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Create a `.env` file
-Copy `.env.example` to `.env` and keep the same variables:
-- `DATABASE_URL`
-- `JOB_SOURCE_URL`
-  
-Example values from `.env.example`:
-```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/tech_jobs_db
-JOB_SOURCE_URL=https://www.arbeitnow.com/api/job-board-api
-```
-
-### 5. Start PostgreSQL with Docker Compose
-This project includes a `docker-compose.yml` that starts a PostgreSQL service:
-- Service: `db`
-- Image: `postgres:16`
-- Host port: `5433`
-- Container port: `5432`
-- Database: `tech_jobs_db`
-- User: `postgres`
-- Password: `postgres`
-
-Start the database:
-```bash
-docker compose up -d
-```
-
-### 6. Create the database tables
-
-After PostgreSQL is running, create the raw and processed tables:
-
-Run these commands in PowerShell on Windows:
-```powershell
-Get-Content sql/create_raw_tables.sql | docker compose exec -T db psql -U postgres -d tech_jobs_db
-```
 
 ```powershell
-Get-Content sql/create_processed_tables.sql | docker compose exec -T db psql -U postgres -d tech_jobs_db
+python -m pip install -r requirements.txt
 ```
 
-### 7. Run the pipeline scripts
-```bash
+### 4. Create the local environment file
+
+```powershell
+Copy-Item .env.example .env
+```
+
+The supplied local defaults target PostgreSQL on host port `5433`. Update `.env` if your local credentials, port, database names, or API URL differ.
+
+The repository ignores `.env`; keep real credentials there and keep `.env.example` limited to safe local examples.
+
+| Variable | Used by | Local example | Purpose |
+|---|---|---|---|
+| `DATABASE_URL` | Pipeline and API | `postgresql://postgres:postgres@localhost:5433/tech_jobs_db` | Main PostgreSQL connection string |
+| `JOB_SOURCE_URL` | Ingestion | `https://www.arbeitnow.com/api/job-board-api` | Arbeitnow API endpoint |
+| `TEST_DATABASE_URL` | Integration tests | `postgresql://postgres:postgres@localhost:5433/tech_jobs_test` | Dedicated test-only PostgreSQL database |
+
+`DATABASE_URL` and `JOB_SOURCE_URL` must be present and nonblank when accessed. Configuration validation fails early with a concise `RuntimeError` rather than silently using an invalid value. Integration fixtures empty the project tables in `tech_jobs_test`, so never point `TEST_DATABASE_URL` at a database containing data you need.
+
+### 5. Start PostgreSQL
+
+```powershell
+docker compose up -d db
+docker compose exec -T db pg_isready -U postgres -d tech_jobs_db
+```
+
+Docker Compose runs PostgreSQL 16 on container port `5432`, published as host port `5433`. Data persists in the named `postgres_data` volume.
+
+### 6. Apply the application schemas
+
+```powershell
+Get-Content -Raw .\sql\create_raw_tables.sql | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d tech_jobs_db
+Get-Content -Raw .\sql\create_processed_tables.sql | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d tech_jobs_db
+```
+
+Apply the raw schema first because the processed schema creates a foreign key to `raw_jobs`.
+
+### 7. Run the pipeline
+
+Run the stages in order:
+
+```powershell
 python -m pipeline.ingest_jobs
 python -m pipeline.transform_jobs
 python -m pipeline.skill_extractor
 ```
 
-### 8. Start the FastAPI app
-Start the local server with:
-```bash
-uvicorn app.main:app --reload
+These stages are invoked manually. The repository does not include scheduled orchestration.
+
+### 8. Start FastAPI
+
+```powershell
+python -m uvicorn app.main:app --reload
 ```
 
-### 9. Open the API docs
-Visit:
-```
-http://127.0.0.1:8000/docs
-```
+Useful local URLs:
 
+- Analytics route prefix: `http://127.0.0.1:8000/analytics`
+- Interactive Swagger UI: `http://127.0.0.1:8000/docs`
+- OpenAPI document: `http://127.0.0.1:8000/openapi.json`
 
-## Pipeline Data Workflow
+## Analytics endpoints
 
-Arbeitnow API
+The examples below illustrate response shapes; counts depend on the locally processed data. When no matching rows exist, each endpoint returns `200 OK` with an empty JSON list.
 
-↓
+### `GET /analytics/top-skills`
 
-raw_jobs
+Returns up to ten skills ordered by descending job count, then ascending skill name for deterministic ties.
 
-↓
-
-jobs_cleaned
-
-↓
-
-skills_extracted + job_skill_map
-
-↓
-
-FastAPI analytics endpoints
-
-1. Ingest raw job data from [Arbeitnow API](https://www.arbeitnow.com/api/job-board-api)
-2. Store raw job records in `raw_jobs`
-3. Transform raw records into cleaned rows in `jobs_cleaned`
-4. Extract skills from job titles and descriptions
-5. Store extracted skills in `skills_extracted`
-6. Store job-to-skill links in `job_skill_map`
-7. Expose analytics from the cleaned/processed tables via FastAPI
-
-
-## Database Tables
-
-- `raw_jobs`  
-  Stores original job listings from the source API
-  Includes parsed raw fields and the full raw JSON payload  
-  Key columns: `source_job_id`, `company_name`, `title`, `description`, `location`, `remote`, `posted_at_raw`, `raw_payload`
-
-- `jobs_cleaned`  
-  Stores cleaned job records
-  Derived from `raw_jobs`
-  Key columns: `raw_job_id`, `source_job_id`, `company_name`, `title`, `description`, `location`, `remote`, `posted_at`
-
-- `skills_extracted`  
-  Stores unique extracted skill names 
-  Key columns: `skill_name`
-
-- `job_skill_map`  
-  Maps cleaned jobs to extracted skills  
-  Key columns: `job_id` - reference to `jobs_cleaned.id`, 
-              `skill_id` - reference to `skills_extracted.id`
-
-
-## FastAPI Analytics Endpoints
-
-After starting the FastAPI app, visit:
-```bash
-http://127.0.0.1:8000/docs
+```json
+[
+  {
+    "skill_name": "Python",
+    "job_count": 24
+  },
+  {
+    "skill_name": "SQL",
+    "job_count": 18
+  }
+]
 ```
 
-The app exposes analytics under `/analytics`
+### `GET /analytics/top-titles`
 
-- GET `/analytics/top-skills`
-  Returns the top 10 extracted skills by job count
+Returns up to ten exact cleaned titles ordered by descending count, then ascending title for deterministic ties.
 
-  Example curl:
-  ```bash
-  curl http://127.0.0.1:8000/analytics/top-skills
-  ```
+```json
+[
+  {
+    "title": "Data Engineer",
+    "job_count": 12
+  },
+  {
+    "title": "Backend Engineer",
+    "job_count": 9
+  }
+]
+```
 
-  Example response shape:
-  ```json
-  [
-    {"skill_name": "Python", "job_count": 12},
-    {"skill_name": "SQL", "job_count": 9}
-  ]
-  ```
+### `GET /analytics/remote-status`
+
+Groups cleaned jobs by the nullable `remote` value supplied by the source. `true` and `false` preserve the corresponding source values, while `null` represents missing source information. It is not a location-text classifier.
+
+The SQL orders the nullable flag descending. With all three groups present, PostgreSQL returns `null` first, followed by `true` and `false`.
+
+```json
+[
+  {
+    "remote": null,
+    "job_count": 2
+  },
+  {
+    "remote": true,
+    "job_count": 30
+  },
+  {
+    "remote": false,
+    "job_count": 17
+  }
+]
+```
+
+If an analytics database query fails, the client receives:
+
+```json
+{
+  "detail": "Analytics data is temporarily unavailable"
+}
+```
+
+with HTTP status `503`; database exception details are not included in the response.
+
+## Tests
+
+### Unit and API tests without PostgreSQL integration tests
+
+The following focused command runs mocked configuration, database, pipeline, and analytics tests without requiring a live PostgreSQL test database:
+
+```powershell
+python -m pytest `
+    tests/test_config_database.py `
+    tests/test_ingest_jobs.py `
+    tests/test_transform_jobs.py `
+    tests/test_skill_extractor.py `
+    tests/test_analytics.py `
+    -q
+```
+
+### Full suite with PostgreSQL integration tests
+
+Docker Compose creates `tech_jobs_db` automatically, but it does not create `tech_jobs_test`. Create the dedicated test database once:
+
+```powershell
+docker compose exec -T db createdb -U postgres tech_jobs_test
+```
+
+If PostgreSQL reports that the database already exists, do not recreate it. Apply both schemas to the test database:
+
+```powershell
+Get-Content -Raw .\sql\create_raw_tables.sql | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d tech_jobs_test
+Get-Content -Raw .\sql\create_processed_tables.sql | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d tech_jobs_test
+```
+
+Set the test connection explicitly and run the complete suite:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5433/tech_jobs_test"
+python -m pytest -q
+```
+
+The integration fixtures require the database name to be exactly `tech_jobs_test`. They empty the project tables in that dedicated database and use rollback or explicit cleanup after testing, which is why the test URL must never target development data. With PostgreSQL running, both schemas applied, and `TEST_DATABASE_URL` configured, the current verified full-suite result is **91 passing tests**.
 
 
-- GET `/analytics/top-titles`
-  Returns the top 10 most common job titles
+## Project highlights
 
-  Example curl:
-  ```bash
-  curl http://127.0.0.1:8000/analytics/top-titles
-  ```
+- Layered PostgreSQL model with traceability from preserved source data to cleaned and enriched records.
+- Validation, conflict-safe inserts, and transaction rollback make pipeline reruns predictable.
+- Typed FastAPI responses, deterministic analytics queries, and generic database-error responses.
+- Mocked unit tests and PostgreSQL integration tests protected by a dedicated test-database guard.
 
-  Example response shape:
-  ```json
-  [
-    {"title": "Software Engineer", "job_count": 8},
-    {"title": "Data Engineer", "job_count": 5}
-  ]
-  ```
+## Current scope and limitations
 
-- GET `/analytics/remote-vs-onsite`
-  Returns counts of remote vs non-remote jobs
-
-  Example curl:
-  ```bash
-  curl http://127.0.0.1:8000/analytics/remote-vs-onsite
-  ```
-
-  Example response shape:
-  ```json
-  [
-    {"remote": true, "job_count": 20},
-    {"remote": false, "job_count": 15}
-  ]
-  ```
-
-
-## Project Limitations
-
-- Skill extraction uses a fixed skill list and simple substring matching.
-- It does not use advanced NLP, synonym matching, or entity extraction.
-- The pipeline is designed for local development and analytics demos, not production deployment.
-- Re-running the pipeline does not update existing cleaned rows; duplicates are skipped by source ID.
-- The API is read-only and does not accept query parameters for analytics.
-
-
-## What This Project Demonstrates
-- A basic ETL pipeline from API ingestion to analytics reports
-- Raw data capture and a cleaned/processed data layer
-- Simple relational schema design in PostgreSQL
-- Fixed-list skill extraction from job text
-- A minimal FastAPI analytics service
-- Using environment variables and Docker Compose for local setup
+- Ingestion processes one API response per run; pagination and scheduling are not implemented.
+- Pipeline writes are insert-only and do not synchronize source updates or remove stale mappings.
+- Skill extraction uses a fixed vocabulary without contextual or synonym matching.
+- Results come from one general job board and are not representative of the complete technology job market.
