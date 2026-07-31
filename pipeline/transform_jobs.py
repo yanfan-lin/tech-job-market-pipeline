@@ -6,19 +6,19 @@ from app.database import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-# Accept realistic source publication times from 2000 through 2099.
+# Accept Unix-second publication times from 2000-01-01 through 2099-12-31.
 MIN_VALID_EPOCH = 946_684_800
 MAX_VALID_EPOCH = 4_102_444_799
 
 
 def process_raw_jobs(cur) -> dict[str, int]:
-    """Transform valid raw jobs and return data-quality outcome counts."""
+    """Transform rows with valid required fields and return data-quality counts."""
 
-    # Count all raw job records in this transformation run
+    # This full-table pass considers every raw row, including previously transformed source IDs.
     cur.execute("SELECT COUNT(*) FROM raw_jobs;")
     fetched = cur.fetchone()[0]
 
-    # Count raw records that cannot be transformed because of one or more missing fields
+    # Count rows rejected because at least one required field is NULL or blank.
     cur.execute("""
         SELECT COUNT(*)
         FROM raw_jobs
@@ -35,7 +35,8 @@ def process_raw_jobs(cur) -> dict[str, int]:
         """)
     invalid_skipped = cur.fetchone()[0]
 
-    # Count job records whose timestamp cannot be safely converted
+    # Count otherwise eligible rows whose present timestamp is nonnumeric
+    # or outside the accepted Unix-second range.
     cur.execute(
         """
         SELECT COUNT(*)
@@ -67,7 +68,8 @@ def process_raw_jobs(cur) -> dict[str, int]:
     )
     invalid_timestamps = cur.fetchone()[0]
 
-    # Normalize and insert valid raw records while skipping existing source IDs
+    # Invalid optional timestamps become NULL; invalid required fields and
+    # existing source IDs are skipped.
     cur.execute(
         """
         INSERT INTO jobs_cleaned (
@@ -125,6 +127,8 @@ def process_raw_jobs(cur) -> dict[str, int]:
     )
 
     inserted = len(cur.fetchall())
+
+    # Rows with valid required fields that were not inserted conflicted on source_job_id.
     duplicates_skipped = fetched - invalid_skipped - inserted
 
     return {
@@ -150,7 +154,7 @@ def transform_jobs() -> dict[str, int]:
         return counts
 
     except Exception:
-        # Roll back the complete transformation after an unexpected database error
+        # Roll back all pending cleaned rows if processing or database work fails.
         conn.rollback()
         raise
 
@@ -191,4 +195,3 @@ if __name__ == "__main__":
     )
 
     main()
-    

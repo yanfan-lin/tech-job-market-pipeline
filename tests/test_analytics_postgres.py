@@ -26,7 +26,7 @@ def analytics_database():
     cur.execute("SELECT current_database();")
     database_name = cur.fetchone()[0]
 
-    # Stop if using the normal project database
+    # Only use the test database
     if database_name != "tech_jobs_test":
         cur.close()
         conn.close()
@@ -151,7 +151,7 @@ def test_analytics_endpoints_use_real_postgresql_aggregation(
         ),
     )
 
-    # Map each skill name to its generated database ID for job-skill inserts
+    # Map skill names to their database IDs
     skill_ids = {skill_name: skill_id for skill_id, skill_name in cur.fetchall()}
 
     cur.execute(
@@ -172,10 +172,10 @@ def test_analytics_endpoints_use_real_postgresql_aggregation(
         ),
     )
 
-    # Commit the seed data so the endpoint's separate connection can see it
+    # Commit so the endpoint's connection can see the test data
     conn.commit()
 
-    # Direct application connections to the dedicated database for this test
+    # Point the app to the test database
     monkeypatch.setenv("DATABASE_URL", test_database_url)
 
     skills_response = client.get("/analytics/top-skills")

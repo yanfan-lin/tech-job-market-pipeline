@@ -11,25 +11,25 @@ from app.database import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-# These fields identify a job and are required by the raw_jobs table
+# Reject records without a nonblank slug, company name, or title;
+# slug becomes the unique source_job_id.
 REQUIRED_FIELDS = ("slug", "company_name", "title")
 
 
 def get_jobs() -> Any:
-    # Send a GET request to the job source API
+    """Fetch and decode one response from the configured job-source URL."""
+
     response = requests.get(settings.JOB_SOURCE_URL)
 
-    # Raise error if request failed
     response.raise_for_status()
 
-    # Convert JSON response into Python dictionary
     data = response.json()
 
     return data
 
 
 def extract_job_records(raw_data: Any) -> list[Any]:
-    """Return the job list from a valid API response."""
+    """Validate the top-level API response and return its data list."""
 
     if not isinstance(raw_data, dict):
         raise ValueError("API response must be a JSON object.")
@@ -55,7 +55,7 @@ def serialize_optional_json(value: Any) -> str | None:
 
 
 def prepare_job(job: Any) -> dict[str, Any] | None:
-    """Return database-ready job data, or None when required data is invalid."""
+    """Validate required fields and prepare mapped values while preserving the original record in raw_payload."""
 
     if not isinstance(job, dict):
         return None
@@ -164,7 +164,7 @@ def save_jobs(jobs: list[Any]) -> dict[str, int]:
         return counts
 
     except Exception:
-        # Roll back the complete batch when an unexpected database error occurs
+        # Roll back all pending inserts if batch processing or database work fails.
         conn.rollback()
 
         raise

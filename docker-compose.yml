@@ -1,3 +1,4 @@
+# Run the local PostgreSQL development database on host port 5433.
 services:
   db:
     image: postgres:16
@@ -9,7 +10,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  
+
 volumes:
   postgres_data:
 

@@ -35,7 +35,7 @@ class RemoteFlagCount(BaseModel):
 
 
 def _fetch_all(query: str):
-    """Execute an analytics query and always close database resources."""
+    """Execute a read-only query, map psycopg failures to HTTP 503, and close created resources."""
 
     conn = None
     cur = None
@@ -64,9 +64,10 @@ def _fetch_all(query: str):
             conn.close()
 
 
-# Return the TOP 10 most common extracted skills
 @router.get("/top-skills", response_model=list[SkillCount])
 def get_top_skills():
+    """Return the ten extracted skills mapped to the most cleaned jobs."""
+
     rows = _fetch_all("""
         SELECT
             se.skill_name,
@@ -92,9 +93,10 @@ def get_top_skills():
     return result
 
 
-# Return the Top 10 most common job titles
 @router.get("/top-titles", response_model=list[TitleCount])
 def get_top_titles():
+    """Return the ten most frequent exact title values in cleaned jobs."""
+
     rows = _fetch_all("""
         SELECT
             title,
@@ -118,9 +120,10 @@ def get_top_titles():
     return result
 
 
-# Return counts of remote jobs and non-remote jobs
 @router.get("/remote-status", response_model=list[RemoteFlagCount])
 def get_remote_status():
+    """Return job counts grouped by the source-provided remote flag."""
+
     rows = _fetch_all("""
         SELECT
             remote,

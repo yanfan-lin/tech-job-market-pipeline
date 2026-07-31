@@ -12,6 +12,7 @@ from app.main import app
 # Exercise FastAPI routes without starting a real Uvicorn server
 client = TestClient(app)
 
+# Keep server errors as responses for failure tests
 error_client = TestClient(app, raise_server_exceptions=False)
 
 
@@ -132,7 +133,7 @@ def test_analytics_endpoints_return_database_results(
 def test_analytics_endpoints_return_empty_list_when_no_data_exists(path):
     conn, cur = create_mock_connection([])
 
-    # An empty database result is successful analytic output, not a 404 NOT FOUND
+    # An empty result is valid analytics output, not a 404 response
     with patch.object(
         analytics,
         "get_db_connection",

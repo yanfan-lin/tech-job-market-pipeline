@@ -9,7 +9,7 @@ from app import database
 from app.config import Settings
 
 
-# Verify settings are read when accessed instead of being captured during import
+# Read settings when accessed, not during import
 def test_settings_returns_current_environment_values(monkeypatch):
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -30,7 +30,6 @@ def test_settings_returns_current_environment_values(monkeypatch):
     assert settings.JOB_SOURCE_URL == "https://example.com/jobs"
 
 
-# Cover missing, empty, and whitespace-only configuration values
 @pytest.mark.parametrize(
     "invalid_value",
     [
@@ -55,7 +54,6 @@ def test_database_url_rejects_missing_or_blank_value(monkeypatch, invalid_value)
         _ = settings.DATABASE_URL
 
 
-# Cover missing, empty, and whitespace-only configuration values
 @pytest.mark.parametrize(
     "invalid_value",
     [

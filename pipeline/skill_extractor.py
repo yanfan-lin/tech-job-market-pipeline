@@ -8,7 +8,7 @@ from app.database import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-# A Fixed skill list
+# Skills the extractor looks for
 SKILLS = [
     "Python",
     "SQL",
@@ -26,7 +26,7 @@ SKILLS = [
 
 
 def extract_skills_from_text(text: Any) -> list[str]:
-    """Return known skills found as complete terms in the supplied text."""
+    """Return configured skills matched case-insensitively as whole terms, once each in SKILLS order."""
 
     if not isinstance(text, str) or not text.strip():
         return []
@@ -60,6 +60,7 @@ def insert_skill(cur, skill_name: str) -> tuple[int, bool]:
     if inserted_row is not None:
         return inserted_row[0], True
 
+    # A conflict returns no ID, so retrieve the existing skill for mapping creation.
     cur.execute(
         """
         SELECT id
@@ -78,7 +79,7 @@ def insert_skill(cur, skill_name: str) -> tuple[int, bool]:
 
 
 def insert_job_skill_map(cur, job_id: int, skill_id: int) -> bool:
-    """Insert a job-skill mapping and return whether a new row  was created."""
+    """Insert a job-skill mapping and return whether a new row was created."""
 
     cur.execute(
         """
@@ -97,9 +98,8 @@ def insert_job_skill_map(cur, job_id: int, skill_id: int) -> bool:
 
 
 def process_cleaned_jobs(cur) -> dict[str, int]:
-    """Extract and store skills for all cleaned jobs."""
+    """Match configured skills against every cleaned title and description, adding missing skills and mappings without removing existing ones."""
 
-    # Load the text needed for skill matching
     cur.execute("""
         SELECT
             id,

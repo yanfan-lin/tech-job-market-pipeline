@@ -21,7 +21,7 @@ def db_cursor():
     cur.execute("SELECT current_database();")
     database_name = cur.fetchone()[0]
 
-    # Stop if the URL points to the normal project database
+    # Only use the test database
     if database_name != "tech_jobs_test":
         cur.close()
         conn.close()

@@ -8,7 +8,7 @@ load_dotenv()
 
 
 def _get_required_env(name: str) -> str:
-    """Return a required variable or raise an error."""
+    """Return a stripped environment value, reject missing or blank settings."""
 
     value = os.getenv(name)
 
@@ -19,6 +19,8 @@ def _get_required_env(name: str) -> str:
 
 
 class Settings:
+    """Expose required project settings with validation on each access."""
+
     @property
     def DATABASE_URL(self) -> str:
         """Return the PostgreSQL connection URL."""
