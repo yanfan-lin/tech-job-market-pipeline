@@ -1,0 +1,278 @@
+"""Test the FastAPI analytics endpoints with mocked database results."""
+
+from unittest.mock import MagicMock, patch
+
+import psycopg
+import pytest
+from fastapi.testclient import TestClient
+
+from app.api import analytics
+from app.main import app
+
+# Exercise FastAPI routes without starting a real Uvicorn server
+client = TestClient(app)
+
+error_client = TestClient(app, raise_server_exceptions=False)
+
+
+def create_mock_connection(rows):
+    """Return mock connection and cursor objects with predefined query rows."""
+
+    conn = MagicMock()
+    cur = MagicMock()
+
+    # Make conn.cursor() return the fake cursor used by the endpoint
+    conn.cursor.return_value = cur
+
+    # Simulate the rows PostgreSQL would return after executing the query
+    cur.fetchall.return_value = rows
+
+    return conn, cur
+
+
+# Run the same API check for all three analytics endpoints
+@pytest.mark.parametrize(
+    (
+        "path",
+        "rows",
+        "expected_response",
+    ),
+    [
+        (
+            "/analytics/top-skills",
+            [
+                ("Python", 12),
+                ("SQL", 8),
+            ],
+            [
+                {
+                    "skill_name": "Python",
+                    "job_count": 12,
+                },
+                {
+                    "skill_name": "SQL",
+                    "job_count": 8,
+                },
+            ],
+        ),
+        (
+            "/analytics/top-titles",
+            [
+                ("Data Engineer", 6),
+                ("Backend Developer", 4),
+            ],
+            [
+                {
+                    "title": "Data Engineer",
+                    "job_count": 6,
+                },
+                {
+                    "title": "Backend Developer",
+                    "job_count": 4,
+                },
+            ],
+        ),
+        (
+            "/analytics/remote-status",
+            [
+                (True, 10),
+                (False, 7),
+                (None, 2),
+            ],
+            [
+                {
+                    "remote": True,
+                    "job_count": 10,
+                },
+                {
+                    "remote": False,
+                    "job_count": 7,
+                },
+                {
+                    "remote": None,
+                    "job_count": 2,
+                },
+            ],
+        ),
+    ],
+)
+def test_analytics_endpoints_return_database_results(
+    path,
+    rows,
+    expected_response,
+):
+    conn, cur = create_mock_connection(rows)
+
+    # Replace only the database boundary,
+    # FastAPI routing and JSON serialization still run
+    with patch.object(
+        analytics,
+        "get_db_connection",
+        return_value=conn,
+    ):
+        response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.json() == expected_response
+
+    cur.execute.assert_called_once()
+    cur.fetchall.assert_called_once_with()
+    cur.close.assert_called_once_with()
+    conn.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/analytics/top-skills",
+        "/analytics/top-titles",
+        "/analytics/remote-status",
+    ],
+)
+def test_analytics_endpoints_return_empty_list_when_no_data_exists(path):
+    conn, cur = create_mock_connection([])
+
+    # An empty database result is successful analytic output, not a 404 NOT FOUND
+    with patch.object(
+        analytics,
+        "get_db_connection",
+        return_value=conn,
+    ):
+        response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+    cur.close.assert_called_once_with()
+    conn.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/analytics/top-skills",
+        "/analytics/top-titles",
+        "/analytics/remote-status",
+    ],
+)
+def test_analytics_endpoints_close_resources_and_return_503_when_query_fails(
+    path,
+):
+    conn, cur = create_mock_connection([])
+
+    # Simulate PostgreSQL rejecting the analytics query
+    cur.execute.side_effect = psycopg.DatabaseError("critical database failure")
+
+    with patch.object(
+        analytics,
+        "get_db_connection",
+        return_value=conn,
+    ):
+        response = error_client.get(path)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Analytics data is temporarily unavailable"}
+
+    # Database details should not be exposed to the API client
+    assert "critical database failure" not in response.text
+
+    cur.close.assert_called_once_with()
+    conn.close.assert_called_once_with()
+
+
+def test_top_skills_openapi_documents_response_fields():
+    """Verify OpenAPI documents the top-skills response fields."""
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+
+    # Read the response-model schemas generated by FastAPI
+    schemas = response.json().get("components", {}).get("schemas", {})
+
+    assert "SkillCount" in schemas
+
+    properties = schemas["SkillCount"]["properties"]
+
+    assert properties["skill_name"]["type"] == "string"
+    assert properties["job_count"]["type"] == "integer"
+
+
+def test_top_titles_openapi_documents_response_fields():
+    """Verify OpenAPI documents the top-titles response fields."""
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+
+    # Read the response-model schemas generated by FastAPI
+    schemas = response.json().get("components", {}).get("schemas", {})
+
+    assert "TitleCount" in schemas
+
+    properties = schemas["TitleCount"]["properties"]
+
+    assert properties["title"]["type"] == "string"
+    assert properties["job_count"]["type"] == "integer"
+
+
+def test_remote_flag_openapi_documents_response_fields():
+    """Verify OpenAPI documents the remote-flag response fields."""
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+
+    # Read the response-model schemas generated by FastAPI
+    schemas = response.json().get("components", {}).get("schemas", {})
+
+    assert "RemoteFlagCount" in schemas
+
+    properties = schemas["RemoteFlagCount"]["properties"]
+
+    assert "remote" in properties
+    assert properties["job_count"]["type"] == "integer"
+
+
+def test_analytics_endpoint_closes_resources_and_returns_503_when_fetch_fails():
+    """Verify cleanup and the generic response when fetching rows fails."""
+
+    conn, cur = create_mock_connection([])
+
+    # Simulate PostgreSQL failing while returning query results
+    cur.fetchall.side_effect = psycopg.DatabaseError("critical fetch failure")
+
+    with patch.object(
+        analytics,
+        "get_db_connection",
+        return_value=conn,
+    ):
+        response = error_client.get("/analytics/top-skills")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Analytics data is temporarily unavailable"}
+    assert "critical fetch failure" not in response.text
+
+    cur.execute.assert_called_once()
+    cur.fetchall.assert_called_once_with()
+    cur.close.assert_called_once_with()
+    conn.close.assert_called_once_with()
+
+
+def test_analytics_endpoint_returns_503_when_connection_fails():
+    """Verify a connection failure returns the generic analytics response."""
+
+    with patch.object(
+        analytics,
+        "get_db_connection",
+        side_effect=psycopg.OperationalError("critical connection failure"),
+    ) as mock_get_db_connection:
+        response = error_client.get("/analytics/top-skills")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Analytics data is temporarily unavailable"}
+
+    # Database details should not be exposed to the API client
+    assert "critical connection failure" not in response.text
+
+    mock_get_db_connection.assert_called_once_with()
