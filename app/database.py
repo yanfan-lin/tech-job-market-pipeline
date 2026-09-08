@@ -2,10 +2,10 @@
 
 import psycopg
 
-from app.config import settings
+from app.config import get_required_env
 
 
 def get_db_connection():
     """Open a PostgreSQL connection; callers own transaction handling and cleanup."""
 
-    return psycopg.connect(settings.DATABASE_URL)
+    return psycopg.connect(get_required_env("DATABASE_URL"))

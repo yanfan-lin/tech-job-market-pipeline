@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _get_required_env(name: str) -> str:
+def get_required_env(name: str) -> str:
     """Return a stripped environment value, reject missing or blank settings."""
 
     value = os.getenv(name)
@@ -16,22 +16,3 @@ def _get_required_env(name: str) -> str:
         raise RuntimeError(f"Required environment variable {name} is missing or blank")
 
     return value.strip()
-
-
-class Settings:
-    """Expose required project settings with validation on each access."""
-
-    @property
-    def DATABASE_URL(self) -> str:
-        """Return the PostgreSQL connection URL."""
-
-        return _get_required_env("DATABASE_URL")
-
-    @property
-    def JOB_SOURCE_URL(self) -> str:
-        """Return the job-source API URL."""
-
-        return _get_required_env("JOB_SOURCE_URL")
-
-
-settings = Settings()

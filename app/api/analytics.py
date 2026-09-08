@@ -68,17 +68,11 @@ def get_top_skills():
         LIMIT 10;
         """)
 
-    result = []
+    return [
 
-    for row in rows:
-        result.append(
-            {
-                "skill_name": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+        {"skill_name": row[0], "job_count": row[1]}
+        for row in rows
+    ]
 
 
 @router.get("/top-titles", response_model=list[TitleCount])
@@ -95,17 +89,10 @@ def get_top_titles():
         LIMIT 10;
         """)
 
-    result = []
-
-    for row in rows:
-        result.append(
-            {
-                "title": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+    return [
+        {"title": row[0], "job_count": row[1]}
+        for row in rows
+    ]
 
 
 @router.get("/remote-status", response_model=list[RemoteFlagCount])
@@ -121,14 +108,7 @@ def get_remote_status():
         ORDER BY remote DESC;
         """)
 
-    result = []
-
-    for row in rows:
-        result.append(
-            {
-                "remote": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+    return [
+        {"remote": row[0], "job_count": row[1]}
+        for row in rows
+    ]
