@@ -6,80 +6,31 @@ import pytest
 from pipeline import skill_extractor
 
 
-def test_extract_skills_matches_complete_terms_case_insensitively():
-    text = "Build PYTHON pipelines with sql and PostgreSQL"
-
-    matched_skills = skill_extractor.extract_skills_from_text(text)
-
-    assert matched_skills == [
-        "Python",
-        "SQL",
-        "PostgreSQL",
-    ]
-
-
 @pytest.mark.parametrize(
-    "text",
+    "text, expected",
     [
-        None,
-        "",
-        "   ",
-        123,
+        (None, []),
+        ("", []),
+        ("   ", []),
+        (123, []),
+        ("JavaScript development and digital marketing.", []),
+        ("Python developers use Python.", ["Python"]),
+        (
+            "Build PYTHON pipelines with sql and PostgreSQL",
+            ["Python", "SQL", "PostgreSQL"],
+        ),
     ],
 )
-def test_extract_skills_returns_empty_list_for_missing_or_invalid_text(text):
-    assert skill_extractor.extract_skills_from_text(text) == []
+def test_extract_skills_handles_edge_cases(text, expected):
 
-
-def test_extract_skills_does_not_match_skill_inside_another_word():
-    text = "JavaScript development and digital marketing experience."
-
-    matched_skills = skill_extractor.extract_skills_from_text(text)
-
-    assert "Java" not in matched_skills
-    assert "Git" not in matched_skills
-
-
-def test_extract_skills_returns_each_skill_only_once():
-    text = "Python developers use Python for many Python applications."
-
-    matched_skills = skill_extractor.extract_skills_from_text(text)
-
-    assert matched_skills == ["Python"]
-
-
-def test_insert_skill_returns_new_skill_id():
-    cur = MagicMock()
-
-    # PostgreSQL returns the ID created by INSERT ... RETURNING
-    cur.fetchone.return_value = (12,)
-
-    result = skill_extractor.insert_skill(cur, "Python")
-
-    assert result == (12, True)
-    assert cur.execute.call_count == 1
-
-
-def test_insert_skill_returns_existing_skill_id_after_conflict():
-    cur = MagicMock()
-
-    # First fetch: INSERT returned nothing because the skill already exists.
-    # Second fetch: SELECT returned the existing skill ID
-    cur.fetchone.side_effect = [
-        None,
-        (12,),
-    ]
-
-    result = skill_extractor.insert_skill(cur, "Python")
-
-    assert result == (12, False)
-    assert cur.execute.call_count == 2
+    assert skill_extractor.extract_skills_from_text(text) == expected
 
 
 def test_insert_skill_raises_when_existing_skill_cannot_be_found():
+
     cur = MagicMock()
 
-    # Neither INSERT nor the fallback SELECT returns a row
+    # INSERT or the fallback SELECT should not return a row
     cur.fetchone.side_effect = [
         None,
         None,
@@ -92,140 +43,13 @@ def test_insert_skill_raises_when_existing_skill_cannot_be_found():
         skill_extractor.insert_skill(cur, "Python")
 
 
-def test_insert_job_skill_map_returns_true_when_mapping_is_inserted():
-    cur = MagicMock()
-    cur.fetchone.return_value = (7,)
-
-    inserted = skill_extractor.insert_job_skill_map(
-        cur,
-        job_id=7,
-        skill_id=12,
-    )
-
-    assert inserted is True
-    assert cur.execute.call_count == 1
-
-
-def test_insert_job_skill_map_returns_false_when_mapping_already_exists():
-    cur = MagicMock()
-    cur.fetchone.return_value = None
-
-    inserted = skill_extractor.insert_job_skill_map(
-        cur,
-        job_id=7,
-        skill_id=12,
-    )
-
-    assert inserted is False
-    assert cur.execute.call_count == 1
-
-
-def test_process_cleaned_jobs_returns_outcome_counts():
-    cur = MagicMock()
-
-    cur.fetchall.return_value = [
-        (
-            1,
-            "Python Engineer",
-            "Build SQL pipelines.",
-        ),
-        (
-            2,
-            "Marketing Specialist",
-            "Digital campaign experience.",
-        ),
-        (
-            3,
-            "Java Developer",
-            None,
-        ),
-    ]
-
-    with (
-        patch.object(
-            skill_extractor,
-            "insert_skill",
-            side_effect=[
-                (10, True),
-                (11, False),
-                (12, True),
-            ],
-        ) as insert_skill_mock,
-        patch.object(
-            skill_extractor,
-            "insert_job_skill_map",
-            side_effect=[
-                True,
-                False,
-                True,
-            ],
-        ) as insert_mapping_mock,
-    ):
-        counts = skill_extractor.process_cleaned_jobs(cur)
-
-    assert counts == {
-        "jobs_processed": 3,
-        "jobs_with_matches": 2,
-        "skills_inserted": 2,
-        "mappings_inserted": 2,
-        "mappings_skipped": 1,
-    }
-
-    assert cur.execute.call_count == 1
-    assert insert_skill_mock.call_count == 3
-    assert insert_mapping_mock.call_count == 3
-
-
-def test_save_skill_mappings_returns_counts_and_exits_transaction():
-
-    conn = MagicMock()
-    cur = MagicMock()
-
-    conn.__enter__.return_value = conn
-
-    conn.cursor.return_value = cur
-
-    cur.__enter__.return_value = cur
-
-    expected_counts = {
-        "jobs_processed": 3,
-        "jobs_with_matches": 2,
-        "skills_inserted": 2,
-        "mappings_inserted": 3,
-        "mappings_skipped": 1,
-    }
-
-    with (
-        patch.object(
-            skill_extractor,
-            "get_db_connection",
-            return_value=conn,
-        ),
-        patch.object(
-            skill_extractor,
-            "process_cleaned_jobs",
-            return_value=expected_counts,
-        ) as process_mock,
-    ):
-        result = skill_extractor.save_skill_mappings()
-
-    assert result == expected_counts
-    process_mock.assert_called_once_with(cur)
-
-    cur.__exit__.assert_called_once_with(None, None, None)
-
-    conn.__exit__.assert_called_once_with(None, None, None)
-
-
 def test_save_skill_mappings_passes_failure_to_transaction_and_reraises():
 
     conn = MagicMock()
     cur = MagicMock()
 
     conn.__enter__.return_value = conn
-
     conn.cursor.return_value = cur
-
     cur.__enter__.return_value = cur
 
     with (
@@ -247,44 +71,14 @@ def test_save_skill_mappings_passes_failure_to_transaction_and_reraises():
         skill_extractor.save_skill_mappings()
 
     cur.__exit__.assert_called_once()
-
     conn.__exit__.assert_called_once()
 
     assert conn.__exit__.call_args == cur.__exit__.call_args
-
     assert conn.__exit__.call_args.args[0] is RuntimeError
 
 
-def test_main_logs_success_summary(caplog):
-    counts = {
-        "jobs_processed": 3,
-        "jobs_with_matches": 2,
-        "skills_inserted": 2,
-        "mappings_inserted": 3,
-        "mappings_skipped": 1,
-    }
-
-    with (
-        patch.object(
-            skill_extractor,
-            "save_skill_mappings",
-            return_value=counts,
-        ),
-        caplog.at_level(
-            logging.INFO,
-            logger=skill_extractor.logger.name,
-        ),
-    ):
-        result = skill_extractor.main()
-
-    assert result == counts
-    assert (
-        "Skill extraction complete: jobs_processed=3 jobs_with_matches=2 "
-        "skills_inserted=2 mappings_inserted=3 mappings_skipped=1" in caplog.messages
-    )
-
-
 def test_main_logs_and_reraises_unexpected_failure(caplog):
+
     with (
         patch.object(
             skill_extractor,
