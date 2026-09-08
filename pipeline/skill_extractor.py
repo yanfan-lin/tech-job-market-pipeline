@@ -142,26 +142,8 @@ def process_cleaned_jobs(cur) -> dict[str, int]:
 def save_skill_mappings() -> dict[str, int]:
     """Process cleaned jobs in one transaction and return outcome counts."""
 
-    conn = get_db_connection()
-    cur = None
-
-    try:
-        cur = conn.cursor()
-        counts = process_cleaned_jobs(cur)
-        conn.commit()
-
-        return counts
-
-    except Exception:
-        # Roll back all pending skill and mapping inserts after a failure
-        conn.rollback()
-        raise
-
-    finally:
-        if cur is not None:
-            cur.close()
-
-        conn.close()
+    with get_db_connection() as conn, conn.cursor() as cur:
+        return process_cleaned_jobs(cur)
 
 
 def main() -> dict[str, int]:

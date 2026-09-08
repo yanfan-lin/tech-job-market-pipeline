@@ -37,31 +37,19 @@ class RemoteFlagCount(BaseModel):
 def _fetch_all(query: str):
     """Execute a read-only query, map psycopg failures to HTTP 503, and close created resources."""
 
-    conn = None
-    cur = None
-
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(query)
+        with get_db_connection() as conn, conn.cursor() as cur:
+            cur.execute(query)
 
-        return cur.fetchall()
+            return cur.fetchall()
 
-    except psycopg.Error as exc:
+    except psycopg.Error as ex:
+
         logger.exception("Analytics database query failed.")
 
         raise HTTPException(
-            status_code=503,
-            detail="Analytics data is temporarily unavailable",
-        ) from exc
-
-    finally:
-        # Close resources that were successfully created
-        if cur is not None:
-            cur.close()
-
-        if conn is not None:
-            conn.close()
+            status_code=503, detail="Analytics data is temporarily unavailable"
+        ) from ex
 
 
 @router.get("/top-skills", response_model=list[SkillCount])
@@ -80,17 +68,11 @@ def get_top_skills():
         LIMIT 10;
         """)
 
-    result = []
+    return [
 
-    for row in rows:
-        result.append(
-            {
-                "skill_name": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+        {"skill_name": row[0], "job_count": row[1]}
+        for row in rows
+    ]
 
 
 @router.get("/top-titles", response_model=list[TitleCount])
@@ -107,17 +89,10 @@ def get_top_titles():
         LIMIT 10;
         """)
 
-    result = []
-
-    for row in rows:
-        result.append(
-            {
-                "title": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+    return [
+        {"title": row[0], "job_count": row[1]}
+        for row in rows
+    ]
 
 
 @router.get("/remote-status", response_model=list[RemoteFlagCount])
@@ -133,14 +108,7 @@ def get_remote_status():
         ORDER BY remote DESC;
         """)
 
-    result = []
-
-    for row in rows:
-        result.append(
-            {
-                "remote": row[0],
-                "job_count": row[1],
-            }
-        )
-
-    return result
+    return [
+        {"remote": row[0], "job_count": row[1]}
+        for row in rows
+    ]

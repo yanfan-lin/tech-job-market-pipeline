@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 
-from app.config import settings
+from app.config import get_required_env
 from app.database import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ REQUIRED_FIELDS = ("slug", "company_name", "title")
 def get_jobs() -> Any:
     """Fetch and decode one response from the configured job-source URL."""
 
-    response = requests.get(settings.JOB_SOURCE_URL)
+    response = requests.get(get_required_env("JOB_SOURCE_URL"))
 
     response.raise_for_status()
 
@@ -153,27 +153,8 @@ def process_jobs(cur, jobs: list[Any]) -> dict[str, int]:
 def save_jobs(jobs: list[Any]) -> dict[str, int]:
     """Save valid jobs in one transaction and return the outcome counts."""
 
-    conn = get_db_connection()
-    cur = None
-
-    try:
-        cur = conn.cursor()
-        counts = process_jobs(cur, jobs)
-        conn.commit()
-
-        return counts
-
-    except Exception:
-        # Roll back all pending inserts if batch processing or database work fails.
-        conn.rollback()
-
-        raise
-
-    finally:
-        if cur is not None:
-            cur.close()
-
-        conn.close()
+    with get_db_connection() as conn, conn.cursor() as cur:
+        return process_jobs(cur, jobs)
 
 
 def main() -> dict[str, int]:

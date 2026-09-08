@@ -62,32 +62,18 @@ def analytics_database():
         conn.close()
 
 
-def insert_cleaned_job(
-    cur,
-    source_job_id: str,
-    title: str,
-    remote: bool | None,
-) -> int:
+def insert_cleaned_job(cur, source_job_id: str, title: str, remote: bool | None) -> int:
     """Insert matching raw and cleaned records and return the cleaned job ID."""
 
     cur.execute(
         """
         INSERT INTO raw_jobs (
-            source,
-            source_job_id,
-            company_name,
-            title,
-            raw_payload
+            source, source_job_id, company_name, title, raw_payload
         )
-        VALUES (%s, %s, %s, %s, '{}'::jsonb)
+        VALUES ('arbeitnow', %s, 'Example Company', %s, '{}'::jsonb)
         RETURNING id;
         """,
-        (
-            "arbeitnow",
-            source_job_id,
-            "Example Company",
-            title,
-        ),
+        (source_job_id, title),
     )
 
     raw_job_id = cur.fetchone()[0]
@@ -95,61 +81,40 @@ def insert_cleaned_job(
     cur.execute(
         """
         INSERT INTO jobs_cleaned (
-            raw_job_id,
-            source,
-            source_job_id,
-            company_name,
-            title,
-            remote
+            raw_job_id, source, source_job_id, company_name, title, remote
         )
-        VALUES (%s, %s, %s, %s, %s, %s)
+        VALUES (%s, 'arbeitnow', %s, 'Example Company', %s, %s)
         RETURNING id;
         """,
-        (
-            raw_job_id,
-            "arbeitnow",
-            source_job_id,
-            "Example Company",
-            title,
-            remote,
-        ),
+        (raw_job_id, source_job_id, title, remote),
     )
 
     return cur.fetchone()[0]
 
 
 def test_analytics_endpoints_use_real_postgresql_aggregation(
-    analytics_database,
-    monkeypatch,
+    analytics_database, monkeypatch
 ):
-    """Verify analytics endpoints execute their real PostgreSQL queries."""
+    """Verify real counts, ordering, and the distinction between unknown and false."""
 
     conn, cur, test_database_url = analytics_database
 
     first_job_id = insert_cleaned_job(
-        cur,
-        "analytics-python-sql",
-        "Data Engineer",
-        True,
-    )
-    second_job_id = insert_cleaned_job(
-        cur,
-        "analytics-python",
-        "Backend Developer",
-        False,
+        cur, "analytics-python-sql", "Data Engineer", True
     )
 
-    cur.execute(
-        """
-        INSERT INTO skills_extracted (skill_name)
-        VALUES (%s), (%s)
-        RETURNING id, skill_name;
-        """,
-        (
-            "Python",
-            "SQL",
-        ),
+    second_job_id = insert_cleaned_job(
+        cur, "analytics-python", "Backend Developer", False
     )
+
+    # Missing remote information should remain its own group
+    insert_cleaned_job(cur, "analytics-unknown-remote", "QA Engineer", None)
+
+    cur.execute("""
+        INSERT INTO skills_extracted (skill_name)
+        VALUES ('Python'), ('SQL')
+        RETURNING id, skill_name;
+        """)
 
     # Map skill names to their database IDs
     skill_ids = {skill_name: skill_id for skill_id, skill_name in cur.fetchall()}
@@ -157,10 +122,7 @@ def test_analytics_endpoints_use_real_postgresql_aggregation(
     cur.execute(
         """
         INSERT INTO job_skill_map (job_id, skill_id)
-        VALUES
-            (%s, %s),
-            (%s, %s),
-            (%s, %s);
+        VALUES (%s, %s), (%s, %s), (%s, %s);
         """,
         (
             first_job_id,
@@ -172,50 +134,29 @@ def test_analytics_endpoints_use_real_postgresql_aggregation(
         ),
     )
 
-    # Commit so the endpoint's connection can see the test data
+    # Commit so the endpoint's separate connection can see the test data
     conn.commit()
-
-    # Point the app to the test database
     monkeypatch.setenv("DATABASE_URL", test_database_url)
 
     skills_response = client.get("/analytics/top-skills")
-
     assert skills_response.status_code == 200
     assert skills_response.json() == [
-        {
-            "skill_name": "Python",
-            "job_count": 2,
-        },
-        {
-            "skill_name": "SQL",
-            "job_count": 1,
-        },
+        {"skill_name": "Python", "job_count": 2},
+        {"skill_name": "SQL", "job_count": 1},
     ]
 
     titles_response = client.get("/analytics/top-titles")
-
     assert titles_response.status_code == 200
     assert titles_response.json() == [
-        {
-            "title": "Backend Developer",
-            "job_count": 1,
-        },
-        {
-            "title": "Data Engineer",
-            "job_count": 1,
-        },
+        {"title": "Backend Developer", "job_count": 1},
+        {"title": "Data Engineer", "job_count": 1},
+        {"title": "QA Engineer", "job_count": 1},
     ]
 
     remote_response = client.get("/analytics/remote-status")
-
     assert remote_response.status_code == 200
     assert remote_response.json() == [
-        {
-            "remote": True,
-            "job_count": 1,
-        },
-        {
-            "remote": False,
-            "job_count": 1,
-        },
+        {"remote": None, "job_count": 1},
+        {"remote": True, "job_count": 1},
+        {"remote": False, "job_count": 1},
     ]
