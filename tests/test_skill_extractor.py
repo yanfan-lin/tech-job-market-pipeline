@@ -176,10 +176,16 @@ def test_process_cleaned_jobs_returns_outcome_counts():
     assert insert_mapping_mock.call_count == 3
 
 
-def test_save_skill_mappings_commits_and_closes_resources():
+def test_save_skill_mappings_returns_counts_and_exits_transaction():
+
     conn = MagicMock()
     cur = MagicMock()
+
+    conn.__enter__.return_value = conn
+
     conn.cursor.return_value = cur
+
+    cur.__enter__.return_value = cur
 
     expected_counts = {
         "jobs_processed": 3,
@@ -206,16 +212,21 @@ def test_save_skill_mappings_commits_and_closes_resources():
     assert result == expected_counts
     process_mock.assert_called_once_with(cur)
 
-    conn.commit.assert_called_once_with()
-    conn.rollback.assert_not_called()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once_with(None, None, None)
+
+    conn.__exit__.assert_called_once_with(None, None, None)
 
 
-def test_save_skill_mappings_rolls_back_closes_resources_and_reraises():
+def test_save_skill_mappings_passes_failure_to_transaction_and_reraises():
+
     conn = MagicMock()
     cur = MagicMock()
+
+    conn.__enter__.return_value = conn
+
     conn.cursor.return_value = cur
+
+    cur.__enter__.return_value = cur
 
     with (
         patch.object(
@@ -235,10 +246,13 @@ def test_save_skill_mappings_rolls_back_closes_resources_and_reraises():
     ):
         skill_extractor.save_skill_mappings()
 
-    conn.commit.assert_not_called()
-    conn.rollback.assert_called_once_with()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once()
+
+    conn.__exit__.assert_called_once()
+
+    assert conn.__exit__.call_args == cur.__exit__.call_args
+
+    assert conn.__exit__.call_args.args[0] is RuntimeError
 
 
 def test_main_logs_success_summary(caplog):

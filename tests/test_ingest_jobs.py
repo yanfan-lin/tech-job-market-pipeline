@@ -237,13 +237,15 @@ def test_process_jobs_counts_inserted_duplicate_and_invalid_records(
 # ---
 # Transaction and resource cleanup tests
 # ---
-def test_save_jobs_commits_and_closes_resources(valid_job):
-    """A successful batch should commit once and close database resources."""
+def test_save_jobs_returns_counts_and_exits_transaction(valid_job):
+    """Return batch counts and exit the transaction normally."""
 
     conn = MagicMock()
     cur = MagicMock()
 
+    conn.__enter__.return_value = conn
     conn.cursor.return_value = cur
+    cur.__enter__.return_value = cur
     cur.fetchone.return_value = (1,)
 
     with patch.object(
@@ -260,17 +262,17 @@ def test_save_jobs_commits_and_closes_resources(valid_job):
         "invalid_skipped": 0,
     }
 
-    conn.commit.assert_called_once_with()
-    conn.rollback.assert_not_called()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once_with(None, None, None)
+    conn.__exit__.assert_called_once_with(None, None, None)
 
 
-def test_save_jobs_rolls_back_closes_resources_and_reraises(valid_job):
+def test_save_jobs_passes_failure_to_transaction_and_reraises(valid_job):
     conn = MagicMock()
     cur = MagicMock()
 
+    conn.__enter__.return_value = conn
     conn.cursor.return_value = cur
+    cur.__enter__.return_value = cur
     cur.execute.side_effect = RuntimeError("database write failed")
 
     with (
@@ -286,10 +288,10 @@ def test_save_jobs_rolls_back_closes_resources_and_reraises(valid_job):
     ):
         ingest_jobs.save_jobs([valid_job])
 
-    conn.commit.assert_not_called()
-    conn.rollback.assert_called_once_with()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once()
+    conn.__exit__.assert_called_once()
+    assert conn.__exit__.call_args == cur.__exit__.call_args
+    assert conn.__exit__.call_args.args[0] is RuntimeError
 
 
 # ---

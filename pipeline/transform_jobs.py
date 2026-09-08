@@ -143,26 +143,8 @@ def process_raw_jobs(cur) -> dict[str, int]:
 def transform_jobs() -> dict[str, int]:
     """Transform raw jobs in one transaction and return outcome counts."""
 
-    conn = get_db_connection()
-    cur = None
-
-    try:
-        cur = conn.cursor()
-        counts = process_raw_jobs(cur)
-        conn.commit()
-
-        return counts
-
-    except Exception:
-        # Roll back all pending cleaned rows if processing or database work fails.
-        conn.rollback()
-        raise
-
-    finally:
-        if cur is not None:
-            cur.close()
-
-        conn.close()
+    with get_db_connection() as conn, conn.cursor() as cur:
+        return process_raw_jobs(cur)
 
 
 def main() -> dict[str, int]:

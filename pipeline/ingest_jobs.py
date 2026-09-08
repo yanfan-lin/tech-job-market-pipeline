@@ -153,27 +153,8 @@ def process_jobs(cur, jobs: list[Any]) -> dict[str, int]:
 def save_jobs(jobs: list[Any]) -> dict[str, int]:
     """Save valid jobs in one transaction and return the outcome counts."""
 
-    conn = get_db_connection()
-    cur = None
-
-    try:
-        cur = conn.cursor()
-        counts = process_jobs(cur, jobs)
-        conn.commit()
-
-        return counts
-
-    except Exception:
-        # Roll back all pending inserts if batch processing or database work fails.
-        conn.rollback()
-
-        raise
-
-    finally:
-        if cur is not None:
-            cur.close()
-
-        conn.close()
+    with get_db_connection() as conn, conn.cursor() as cur:
+        return process_jobs(cur, jobs)
 
 
 def main() -> dict[str, int]:

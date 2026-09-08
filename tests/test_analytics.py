@@ -23,7 +23,9 @@ def create_mock_connection(rows):
     cur = MagicMock()
 
     # Make conn.cursor() return the fake cursor used by the endpoint
+    conn.__enter__.return_value = conn
     conn.cursor.return_value = cur
+    cur.__enter__.return_value = cur
 
     # Simulate the rows PostgreSQL would return after executing the query
     cur.fetchall.return_value = rows
@@ -117,9 +119,12 @@ def test_analytics_endpoints_return_database_results(
     assert response.json() == expected_response
 
     cur.execute.assert_called_once()
+
     cur.fetchall.assert_called_once_with()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+
+    cur.__exit__.assert_called_once_with(None, None, None)
+
+    conn.__exit__.assert_called_once_with(None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -144,8 +149,9 @@ def test_analytics_endpoints_return_empty_list_when_no_data_exists(path):
     assert response.status_code == 200
     assert response.json() == []
 
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once_with(None, None, None)
+
+    conn.__exit__.assert_called_once_with(None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -177,8 +183,13 @@ def test_analytics_endpoints_close_resources_and_return_503_when_query_fails(
     # Database details should not be exposed to the API client
     assert "critical database failure" not in response.text
 
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+    cur.__exit__.assert_called_once()
+
+    conn.__exit__.assert_called_once()
+
+    assert conn.__exit__.call_args == cur.__exit__.call_args
+
+    assert conn.__exit__.call_args.args[0] is psycopg.DatabaseError
 
 
 def test_top_skills_openapi_documents_response_fields():
@@ -255,9 +266,16 @@ def test_analytics_endpoint_closes_resources_and_returns_503_when_fetch_fails():
     assert "critical fetch failure" not in response.text
 
     cur.execute.assert_called_once()
+
     cur.fetchall.assert_called_once_with()
-    cur.close.assert_called_once_with()
-    conn.close.assert_called_once_with()
+
+    cur.__exit__.assert_called_once()
+
+    conn.__exit__.assert_called_once()
+
+    assert conn.__exit__.call_args == cur.__exit__.call_args
+
+    assert conn.__exit__.call_args.args[0] is psycopg.DatabaseError
 
 
 def test_analytics_endpoint_returns_503_when_connection_fails():
