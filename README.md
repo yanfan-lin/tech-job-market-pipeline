@@ -1,6 +1,6 @@
 # Tech Job Market Data Pipeline
 
-[![My Skills](https://skillicons.dev/icons?i=py,postgres,fastapi,docker,regex,git,github)](https://skillicons.dev)
+[![My Skills](https://skillicons.dev/icons?i=py,postgres,fastapi,docker,git,github)](https://skillicons.dev)
 
 An end-to-end data pipeline that ingests job listings from the [Arbeitnow API](https://www.arbeitnow.com/api/job-board-api), stores raw and cleaned records in PostgreSQL, extracts known skills, and exposes aggregate results through FastAPI.
 
@@ -41,41 +41,8 @@ FastAPI analytics
 - **Language:** Python
 - **API:** FastAPI, Pydantic, Uvicorn
 - **Database:** PostgreSQL, Psycopg, SQL
-- **Data ingestion:** Requests, JSON, regular expressions
-- **Testing:** pytest, unittest.mock, FastAPI TestClient, HTTPX
-- **Development:** Docker Compose, Git, GitHub
-
-## Project structure
-
-```text
-.
-|-- app/
-|   |-- api/
-|   |   `-- analytics.py
-|   |-- config.py
-|   |-- database.py
-|   `-- main.py
-|-- pipeline/
-|   |-- ingest_jobs.py
-|   |-- transform_jobs.py
-|   `-- skill_extractor.py
-|-- sql/
-|   |-- create_raw_tables.sql
-|   `-- create_processed_tables.sql
-|-- tests/
-|   |-- test_analytics.py
-|   |-- test_analytics_postgres.py
-|   |-- test_config_database.py
-|   |-- test_ingest_jobs.py
-|   |-- test_skill_extractor.py
-|   |-- test_skill_extractor_postgres.py
-|   |-- test_transform_jobs.py
-|   `-- test_transform_jobs_postgres.py
-|-- .env.example
-|-- docker-compose.yml
-|-- requirements.txt
-`-- README.md
-```
+- **Testing:** pytest, FastAPI TestClient, HTTPX
+- **Development:** Docker Compose
 
 ## Database tables
 
@@ -148,13 +115,13 @@ The supplied local defaults target PostgreSQL on host port `5433`. Update `.env`
 
 The repository ignores `.env`; keep real credentials there and keep `.env.example` limited to safe local examples.
 
-| Variable | Used by | Local example | Purpose |
-|---|---|---|---|
-| `DATABASE_URL` | Pipeline and API | `postgresql://postgres:postgres@localhost:5433/tech_jobs_db` | Main PostgreSQL connection string |
-| `JOB_SOURCE_URL` | Ingestion | `https://www.arbeitnow.com/api/job-board-api` | Arbeitnow API endpoint |
+| Variable            | Used by           | Local example                                                  | Purpose                                 |
+| ------------------- | ----------------- | -------------------------------------------------------------- | --------------------------------------- |
+| `DATABASE_URL`      | Pipeline and API  | `postgresql://postgres:postgres@localhost:5433/tech_jobs_db`   | Main PostgreSQL connection string       |
+| `JOB_SOURCE_URL`    | Ingestion         | `https://www.arbeitnow.com/api/job-board-api`                  | Arbeitnow API endpoint                  |
 | `TEST_DATABASE_URL` | Integration tests | `postgresql://postgres:postgres@localhost:5433/tech_jobs_test` | Dedicated test-only PostgreSQL database |
 
-`DATABASE_URL` and `JOB_SOURCE_URL` must be present and nonblank when accessed. Configuration validation fails early with a concise `RuntimeError` rather than silently using an invalid value. Integration fixtures empty the project tables in `tech_jobs_test`, so never point `TEST_DATABASE_URL` at a database containing data you need.
+`DATABASE_URL` and `JOB_SOURCE_URL` are read and validated when needed. Missing or blank values raise `RuntimeError`. Use `TEST_DATABASE_URL` only for the dedicated test database.
 
 ### 5. Start PostgreSQL
 
@@ -271,9 +238,11 @@ with HTTP status `503`; database exception details are not included in the respo
 
 ## Tests
 
-### Unit and API tests without PostgreSQL integration tests
+Tests focus on invalid input, failure handling, duplicate prevention, and data integrity. PostgreSQL integration tests also verify timestamp normalization and analytics results.
 
-The following focused command runs mocked configuration, database, pipeline, and analytics tests without requiring a live PostgreSQL test database:
+### Unit and API tests
+
+Run these tests without a running PostgreSQL database:
 
 ```powershell
 python -m pytest `
@@ -307,15 +276,7 @@ $env:TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5433/tech_job
 python -m pytest -q
 ```
 
-The integration fixtures require the database name to be exactly `tech_jobs_test`. They empty the project tables in that dedicated database and use rollback or explicit cleanup after testing, which is why the test URL must never target development data. With PostgreSQL running, both schemas applied, and `TEST_DATABASE_URL` configured, the current verified full-suite result is **91 passing tests**.
-
-
-## Project highlights
-
-- Layered PostgreSQL model with traceability from preserved source data to cleaned and enriched records.
-- Validation, conflict-safe inserts, and transaction rollback make pipeline reruns predictable.
-- Typed FastAPI responses, deterministic analytics queries, and generic database-error responses.
-- Mocked unit tests and PostgreSQL integration tests protected by a dedicated test-database guard.
+Integration tests require a database named `tech_jobs_test`. Fixtures clear its project tables and use rollback or explicit cleanup to isolate tests. Never use a database containing data you need.
 
 ## Current scope and limitations
 
